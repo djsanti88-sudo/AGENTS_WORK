@@ -64,7 +64,7 @@ async def get_researcher_tool(mcp_servers, model_name) -> Tool:
 
 
 class Trader:
-    def __init__(self, name: str, lastname="Trader", model_name="gpt-5.4-mini"):
+    def __init__(self, name: str, lastname="Trader", model_name="deepseek-v4-flash"):
         self.name = name
         self.lastname = lastname
         self.agent = None

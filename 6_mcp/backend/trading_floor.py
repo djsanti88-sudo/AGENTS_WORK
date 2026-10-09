@@ -27,8 +27,8 @@ if USE_MANY_MODELS:
     ]
     short_model_names = ["GPT 5.5", "DeepSeek V4", "Gemini 3.5 Flash", "Grok 4.3"]
 else:
-    model_names = ["gpt-5.4-mini"] * 4
-    short_model_names = ["GPT 5.4 mini"] * 4
+    model_names = ["deepseek-v4-flash"] * 4
+    short_model_names = ["DeepSeek V4 Flash"] * 4
 
 
 def create_traders() -> List[Trader]:
