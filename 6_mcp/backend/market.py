@@ -5,13 +5,13 @@ feed (all US exchanges). IEX is only used if SIP rejects the request.
 Lookups never fall back to simulated prices.
 """
 
-import json
 import os
-import urllib.request
 from dotenv import load_dotenv
 from alpaca.data.enums import DataFeed
-from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
 from alpaca.data.requests import (
+    CryptoLatestQuoteRequest,
+    CryptoLatestTradeRequest,
     StockLatestTradeRequest,
     StockSnapshotRequest,
 )
@@ -24,6 +24,7 @@ alpaca_secret_key = os.getenv("ALPACA_SECRET_KEY")
 alpaca_configured = bool(alpaca_api_key and alpaca_secret_key)
 
 _data_client: StockHistoricalDataClient | None = None
+_crypto_client: CryptoHistoricalDataClient | None = None
 _trading_client: TradingClient | None = None
 
 
@@ -32,6 +33,13 @@ def data_client() -> StockHistoricalDataClient:
     if _data_client is None:
         _data_client = StockHistoricalDataClient(alpaca_api_key, alpaca_secret_key)
     return _data_client
+
+
+def crypto_client() -> CryptoHistoricalDataClient:
+    global _crypto_client
+    if _crypto_client is None:
+        _crypto_client = CryptoHistoricalDataClient(alpaca_api_key, alpaca_secret_key)
+    return _crypto_client
 
 
 def trading_client() -> TradingClient:
@@ -113,29 +121,36 @@ def crypto_symbol(symbol: str) -> str:
     )
 
 
-def _public_crypto_price(pair: str) -> float:
-    """Coinbase spot when Alpaca's crypto feed rejects the key."""
-    base = pair.split("/")[0]
-    url = f"https://api.coinbase.com/v2/prices/{base}-USD/spot"
-    request = urllib.request.Request(url, headers={"User-Agent": "trading-floor"})
-    with urllib.request.urlopen(request, timeout=10) as response:
-        payload = json.loads(response.read().decode())
-    price = float(payload["data"]["amount"])
-    if price <= 0:
-        raise RuntimeError(f"No crypto price for {pair}")
-    return price
-
-
 def get_crypto_price(symbol: str) -> float:
-    """Coinbase spot. Alpaca's crypto tape is wrong on some pairs (NEAR)."""
+    """Alpaca crypto latest trade, then quote midpoint. No Coinbase fallback."""
     pair = crypto_pair(symbol) or symbol
-    return _public_crypto_price(pair)
+    client = crypto_client()
+    last_error: Exception | None = None
+    try:
+        trades = client.get_crypto_latest_trade(CryptoLatestTradeRequest(symbol_or_symbols=pair))
+        price = float(_lookup(trades, pair).price)
+        if price > 0:
+            return price
+    except Exception as error:
+        last_error = error
+    try:
+        quotes = client.get_crypto_latest_quote(CryptoLatestQuoteRequest(symbol_or_symbols=pair))
+        quote = _lookup(quotes, pair)
+        bid = float(getattr(quote, "bid_price", 0) or 0)
+        ask = float(getattr(quote, "ask_price", 0) or 0)
+        if bid > 0 and ask > 0:
+            return (bid + ask) / 2
+        if bid > 0 or ask > 0:
+            return bid or ask
+    except Exception as error:
+        last_error = error
+    raise RuntimeError(f"No Alpaca crypto price for {pair}") from last_error
 
 
 def get_share_price(symbol: str) -> float:
-    """Return the current Alpaca price. Never substitute a simulated price.
+    """Return the current Alpaca price. Never use Coinbase or simulated prices.
 
-    Crypto pairs use Coinbase spot. Stocks use Alpaca SIP, then IEX.
+    Crypto pairs use Alpaca crypto. Stocks use SIP, then IEX.
     Missing keys or a failed lookup raise instead of filling at a fake price.
     """
     if not alpaca_configured:
