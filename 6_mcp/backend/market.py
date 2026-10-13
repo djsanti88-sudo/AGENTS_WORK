@@ -1,8 +1,8 @@
-"""Share prices from the Alpaca market data API, or a simulator when no keys are set.
+"""Share prices from the Alpaca market data API.
 
-Set ALPACA_API_KEY and ALPACA_SECRET_KEY to use live data. Algo Trader Plus
-unlocks the SIP feed (all US exchanges). Without both keys, prices come from
-market_simulator so the whole trading floor still runs out of the box.
+Set ALPACA_API_KEY and ALPACA_SECRET_KEY. Algo Trader Plus unlocks the SIP
+feed (all US exchanges). IEX is only used if SIP rejects the request.
+Lookups never fall back to simulated prices.
 """
 
 import json
@@ -10,15 +10,12 @@ import os
 import urllib.request
 from dotenv import load_dotenv
 from alpaca.data.enums import DataFeed
-from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
+from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import (
-    CryptoLatestQuoteRequest,
-    CryptoLatestTradeRequest,
     StockLatestTradeRequest,
     StockSnapshotRequest,
 )
 from alpaca.trading.client import TradingClient
-from .market_simulator import simulated_price
 
 load_dotenv(override=True)
 
@@ -27,7 +24,6 @@ alpaca_secret_key = os.getenv("ALPACA_SECRET_KEY")
 alpaca_configured = bool(alpaca_api_key and alpaca_secret_key)
 
 _data_client: StockHistoricalDataClient | None = None
-_crypto_client: CryptoHistoricalDataClient | None = None
 _trading_client: TradingClient | None = None
 
 
@@ -36,13 +32,6 @@ def data_client() -> StockHistoricalDataClient:
     if _data_client is None:
         _data_client = StockHistoricalDataClient(alpaca_api_key, alpaca_secret_key)
     return _data_client
-
-
-def crypto_client() -> CryptoHistoricalDataClient:
-    global _crypto_client
-    if _crypto_client is None:
-        _crypto_client = CryptoHistoricalDataClient(alpaca_api_key, alpaca_secret_key)
-    return _crypto_client
 
 
 def trading_client() -> TradingClient:
@@ -81,10 +70,10 @@ def _snapshot(client: StockHistoricalDataClient, symbol: str, feed: DataFeed) ->
 
 
 # SIP first (Algo Trader Plus), IEX if that feed is rejected. Within a feed,
-# latest trade first and snapshot last. Remember the first feed that works.
+# latest trade first and snapshot last. Always start at SIP so a paid
+# subscription is not stuck on IEX after one early failure.
 price_methods = [_latest_trade, _snapshot]
 feeds = [DataFeed.SIP, DataFeed.IEX]
-feed_index = 0
 
 
 # Bare tickers the crypto tools accept. get_share_price does not use this list,
@@ -138,61 +127,34 @@ def _public_crypto_price(pair: str) -> float:
 
 
 def get_crypto_price(symbol: str) -> float:
-    """Latest crypto trade, then the quote midpoint. This feed does not close."""
+    """Coinbase spot. Alpaca's crypto tape is wrong on some pairs (NEAR)."""
     pair = crypto_pair(symbol) or symbol
-    client = crypto_client()
-    try:
-        trades = client.get_crypto_latest_trade(CryptoLatestTradeRequest(symbol_or_symbols=pair))
-        price = float(_lookup(trades, pair).price)
-        if price > 0:
-            return price
-    except Exception:
-        pass
-    try:
-        quotes = client.get_crypto_latest_quote(CryptoLatestQuoteRequest(symbol_or_symbols=pair))
-        quote = _lookup(quotes, pair)
-        bid = float(getattr(quote, "bid_price", 0) or 0)
-        ask = float(getattr(quote, "ask_price", 0) or 0)
-        if bid > 0 and ask > 0:
-            return (bid + ask) / 2
-        if bid > 0 or ask > 0:
-            return bid or ask
-    except Exception as error:
-        print(f"Alpaca crypto unavailable for {pair} ({type(error).__name__}); using Coinbase spot")
     return _public_crypto_price(pair)
 
 
 def get_share_price(symbol: str) -> float:
-    """Return the current price for a symbol, from Alpaca or the simulator.
+    """Return the current Alpaca price. Never substitute a simulated price.
 
-    Crypto pairs use the 24/7 crypto feed. A failed crypto lookup is not replaced
-    with a simulated stock price, because that price would be wildly wrong.
+    Crypto pairs use Coinbase spot. Stocks use Alpaca SIP, then IEX.
+    Missing keys or a failed lookup raise instead of filling at a fake price.
     """
+    if not alpaca_configured:
+        raise RuntimeError("Alpaca keys required")
     pair = crypto_pair(symbol)
     if pair:
-        if alpaca_configured:
-            return get_crypto_price(pair)
-        return simulated_price(pair)
-    if alpaca_configured:
-        try:
-            return get_share_price_alpaca(symbol)
-        except Exception as e:
-            print(f"Alpaca API unavailable ({e}); using a simulated price")
-    return simulated_price(symbol)
+        return get_crypto_price(pair)
+    return get_share_price_alpaca(symbol)
 
 
 def get_share_price_alpaca(symbol: str) -> float:
-    """Best price the subscription allows, remembering the working feed."""
-    global feed_index
+    """SIP first, then IEX. Each lookup starts at SIP."""
     client = data_client()
     symbol = symbol.upper()
     last_error: Exception | None = None
-    for index in range(feed_index, len(feeds)):
+    for feed in feeds:
         for method in price_methods:
             try:
-                price = method(client, symbol, feeds[index])
-                feed_index = index
-                return price
+                return method(client, symbol, feed)
             except Exception as e:
                 last_error = e
                 continue
