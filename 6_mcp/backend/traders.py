@@ -31,7 +31,7 @@ GROK_BASE_URL = "https://api.x.ai/v1"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-MAX_TURNS = 30
+MAX_TURNS = 17
 RECENT_TRADES = 5
 
 
