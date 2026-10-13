@@ -14,6 +14,9 @@ export interface Holding {
   avg_cost: number;
   market_value: number;
   unrealized_pnl: number;
+  stop_loss?: number | null;
+  take_profit?: number | null;
+  trail_percent?: number | null;
 }
 
 export interface Transaction {
@@ -22,6 +25,7 @@ export interface Transaction {
   price: number;
   timestamp: string;
   rationale: string;
+  side?: string;
 }
 
 export interface TimePoint {
@@ -48,7 +52,7 @@ export interface LogRow {
 }
 
 export interface MarketInfo {
-  source: "massive" | "simulator";
+  source: "alpaca" | "massive" | "simulator";
   is_market_open: boolean;
 }
 

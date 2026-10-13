@@ -14,7 +14,10 @@ from fastapi import FastAPI, HTTPException
 from backend import market
 from backend.accounts import Account
 from backend.database import read_log
+from backend.reset import ensure_short_traders
 from backend.trading_floor import names, lastnames, short_model_names
+
+ensure_short_traders()
 
 # Mirrors the log colours in demo/ so the frontend reproduces the same panel.
 LOG_COLORS = {
@@ -38,9 +41,20 @@ app = FastAPI(title="Trading Floor")
 
 def average_cost(account: Account, symbol: str) -> float:
     """Average price paid across this symbol's buys, for per-holding profit."""
-    spend = sum(t.price * t.quantity for t in account.transactions if t.symbol == symbol and t.quantity > 0)
-    bought = sum(t.quantity for t in account.transactions if t.symbol == symbol and t.quantity > 0)
+    buys = [t for t in account.transactions if t.symbol == symbol and t.quantity > 0 and t.side != "cover"]
+    spend = sum(t.price * t.quantity for t in buys)
+    bought = sum(t.quantity for t in buys)
     return spend / bought if bought else 0.0
+
+
+def average_entry(account: Account, symbol: str, quantity: int) -> float:
+    """Longs keep the buy average. Shorts use the average price they were sold at."""
+    if quantity >= 0:
+        return average_cost(account, symbol)
+    shorts = [t for t in account.transactions if t.symbol == symbol and t.side == "short"]
+    sold = sum(abs(t.quantity) for t in shorts)
+    proceeds = sum(t.price * abs(t.quantity) for t in shorts)
+    return proceeds / sold if sold else 0.0
 
 
 def holdings_detail(account: Account) -> list[dict]:
@@ -48,7 +62,8 @@ def holdings_detail(account: Account) -> list[dict]:
     details = []
     for symbol, quantity in account.holdings.items():
         price = market.get_share_price(symbol)
-        cost = average_cost(account, symbol)
+        cost = average_entry(account, symbol, quantity)
+        plan = account.exits.get(symbol)
         details.append(
             {
                 "symbol": symbol,
@@ -57,6 +72,9 @@ def holdings_detail(account: Account) -> list[dict]:
                 "avg_cost": cost,
                 "market_value": price * quantity,
                 "unrealized_pnl": (price - cost) * quantity,
+                "stop_loss": plan.stop_loss if plan else None,
+                "take_profit": plan.take_profit if plan else None,
+                "trail_percent": plan.trail_percent if plan else None,
             }
         )
     return details
@@ -71,14 +89,14 @@ def require_trader(name: str) -> dict:
 
 @app.get("/api/traders")
 def get_traders() -> list[dict]:
-    """The four traders on the floor."""
+    """The traders on the floor."""
     return roster
 
 
 @app.get("/api/market")
 def get_market() -> dict:
     """Which price source is live, and whether the market is open."""
-    source = "massive" if market.massive_api_key else "simulator"
+    source = "alpaca" if market.alpaca_configured else "simulator"
     return {"source": source, "is_market_open": market.is_market_open()}
 
 

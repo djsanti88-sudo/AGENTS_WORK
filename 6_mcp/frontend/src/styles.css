@@ -124,7 +124,8 @@ body {
   background: var(--fg-muted);
 }
 .market-badge[data-source="simulator"] .market-dot { background: var(--blue); }
-.market-badge[data-source="massive"] .market-dot { background: var(--trend-up); }
+.market-badge[data-source="massive"] .market-dot,
+.market-badge[data-source="alpaca"] .market-dot { background: var(--trend-up); }
 
 .market-status {
   font-size: 11px;
@@ -199,7 +200,7 @@ body {
 
 .panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   gap: 12px;
   padding: 12px;
@@ -329,6 +330,10 @@ body {
 .heatmap-tile[data-pnl="down"] {
   background: color-mix(in srgb, var(--trend-down) 20%, var(--bg-sunk));
 }
+.heatmap-tile[data-side="short"] {
+  outline: 1px dashed color-mix(in srgb, var(--fg) 35%, transparent);
+  outline-offset: -1px;
+}
 
 .heatmap-ticker {
   font-weight: 600;
@@ -338,6 +343,11 @@ body {
 .heatmap-value {
   font-size: 11px;
   color: var(--fg-muted);
+}
+.heatmap-exit {
+  font-size: 9px;
+  color: var(--fg-dim);
+  line-height: 1.2;
 }
 
 .heatmap-tile.flash-up { animation: flash-up 600ms ease-out; }
@@ -450,8 +460,10 @@ body {
   font-weight: 700;
   letter-spacing: 0.06em;
 }
-.txn-side[data-side="buy"] { color: var(--trend-up); }
-.txn-side[data-side="sell"] { color: var(--trend-down); }
+.txn-side[data-side="buy"],
+.txn-side[data-side="cover"] { color: var(--trend-up); }
+.txn-side[data-side="sell"],
+.txn-side[data-side="short"] { color: var(--trend-down); }
 .txn-detail {
   flex: 1;
   min-width: 0;

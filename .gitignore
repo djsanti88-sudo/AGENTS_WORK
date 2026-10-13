@@ -130,6 +130,9 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.tools/
+6_mcp/trader-loop.log
+6_mcp/trader-loop.err
 env/
 venv/
 ENV/

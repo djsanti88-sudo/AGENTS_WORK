@@ -31,17 +31,35 @@ export class TransactionsView {
 
       const side = document.createElement("span");
       side.className = "txn-side";
-      side.dataset.side = t.quantity >= 0 ? "buy" : "sell";
-      side.textContent = t.quantity >= 0 ? "BUY" : "SELL";
+      const kind = tradeKind(t);
+      side.dataset.side = kind;
+      side.textContent = kind.toUpperCase();
 
       const detail = document.createElement("span");
       detail.className = "txn-detail";
-      detail.textContent = `${Math.abs(t.quantity)} ${t.symbol} @ $${t.price.toFixed(2)}`;
+      detail.textContent = `${t.symbol} ${formatQty(t.quantity)} @ ${formatPx(t.price)}`;
 
       row.append(date, side, detail);
       this.host.append(row);
     }
   }
+}
+
+function tradeKind(t: Transaction): "buy" | "sell" | "short" | "cover" {
+  if (t.side === "short" || t.side === "cover") return t.side;
+  return t.quantity >= 0 ? "buy" : "sell";
+}
+
+function formatQty(quantity: number): string {
+  const abs = Math.abs(quantity);
+  if (Number.isInteger(abs)) return String(abs);
+  return abs.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatPx(price: number): string {
+  if (price >= 100) return `$${price.toFixed(2)}`;
+  if (price >= 1) return `$${price.toFixed(3)}`;
+  return `$${price.toFixed(4)}`;
 }
 
 function dateOf(stamp: string): string {

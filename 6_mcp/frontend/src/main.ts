@@ -21,7 +21,7 @@ async function loadMarket(): Promise<void> {
     const badge = document.getElementById("market-badge")!;
     badge.dataset.source = market.source;
     document.getElementById("market-source")!.textContent =
-      market.source === "massive" ? "Live market" : "Simulated";
+      market.source === "simulator" ? "Simulated" : "Alpaca";
     document.getElementById("market-status")!.textContent = market.is_market_open
       ? "Market open"
       : "Market closed";

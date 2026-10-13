@@ -30,10 +30,10 @@ export class Heatmap {
     }
     delete this.host.dataset.empty;
 
-    const totalValue = holdings.reduce((s, h) => s + h.market_value, 0);
+    const totalValue = holdings.reduce((s, h) => s + Math.abs(h.market_value), 0);
 
     for (const h of holdings) {
-      const share = totalValue > 0 ? h.market_value / totalValue : 1 / holdings.length;
+      const share = totalValue > 0 ? Math.abs(h.market_value) / totalValue : 1 / holdings.length;
       let tile = this.tiles.get(h.symbol);
       if (!tile) {
         tile = this.createTile(h.symbol);
@@ -42,7 +42,10 @@ export class Heatmap {
       }
       tile.style.flexGrow = String(Math.max(0.05, share));
       tile.dataset.pnl = h.unrealized_pnl >= 0 ? "up" : "down";
-      tile.querySelector(".heatmap-value")!.textContent = formatMoney(h.market_value);
+      tile.dataset.side = h.quantity < 0 ? "short" : "long";
+      tile.querySelector(".heatmap-ticker")!.textContent = tileLabel(h);
+      tile.querySelector(".heatmap-value")!.textContent = formatMoney(Math.abs(h.market_value));
+      renderExit(tile, h);
 
       const dir = priceDirections[h.symbol];
       if (dir === "up" || dir === "down") flash(tile, dir);
@@ -58,6 +61,38 @@ export class Heatmap {
     `;
     return tile;
   }
+}
+
+function tileLabel(holding: Holding): string {
+  const crypto = holding.symbol.includes("/");
+  const name = crypto ? holding.symbol.split("/")[0] : holding.symbol;
+  if (crypto && holding.quantity < 0) return `${name} crypto short`;
+  if (crypto) return `${name} crypto`;
+  if (holding.quantity < 0) return `${name} SHORT`;
+  return name;
+}
+
+function renderExit(tile: HTMLElement, holding: Holding): void {
+  const label = formatExit(holding);
+  let exit = tile.querySelector(".heatmap-exit");
+  if (!label) {
+    exit?.remove();
+    return;
+  }
+  if (!exit) {
+    exit = document.createElement("span");
+    exit.className = "heatmap-exit";
+    tile.append(exit);
+  }
+  exit.textContent = label;
+}
+
+function formatExit(holding: Holding): string {
+  const bits: string[] = [];
+  if (holding.stop_loss != null) bits.push(`stop ${holding.stop_loss.toFixed(2)}`);
+  if (holding.take_profit != null) bits.push(`open past ${holding.take_profit.toFixed(2)}`);
+  if (holding.trail_percent != null) bits.push(`trail ${holding.trail_percent}%`);
+  return bits.join(" · ");
 }
 
 function flash(tile: HTMLElement, dir: "up" | "down"): void {

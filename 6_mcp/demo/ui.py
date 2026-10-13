@@ -177,7 +177,11 @@ def create_ui():
 
     with gr.Blocks(title="Traders", fill_width=True) as ui:
         with gr.Row():
-            for trader_view in trader_views:
+            for trader_view in trader_views[:4]:
                 trader_view.make_ui()
+        if len(trader_views) > 4:
+            with gr.Row():
+                for trader_view in trader_views[4:]:
+                    trader_view.make_ui()
 
     return ui
